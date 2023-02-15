@@ -1,8 +1,19 @@
 # Mac
 .DS_Store
 
+# Linux
+*.swp
+
+# Object files
 *.o
 
+# Jetbrain
+*.cache
+*.idea
+*.fleet
+compile_commands.json
+
+Makefile
 bin/**
 gamer
 GAMER_CompareData
