@@ -75,8 +75,8 @@ void Init_TestProb()
       case TESTPROB_HYDRO_PARTICLE_TEST :                Init_TestProb_Hydro_ParticleTest();                break;
       case TESTPROB_HYDRO_CDM_LSS :                      Init_TestProb_Hydro_CDM_LSS();                     break;
       case TESTPROB_HYDRO_ZELDOVICH :                    Init_TestProb_Hydro_Zeldovich();                   break;
-      case TESTPROB_HYDRO_MOLECULAR_CLOUD_COLLAPSE :     Init_TestProb_Hydro_MolecularCloudCollapse();      break;
       case TESTPROB_HYDRO_ENERGY_POWER_SPECTRUM :        Init_TestProb_Hydro_EnergyPowerSpectrum();         break;
+      case TESTPROB_HYDRO_MOLECULAR_CLOUD_COLLAPSE :     Init_TestProb_Hydro_MolecularCloudCollapse();      break;
 
       case TESTPROB_ELBDM_EXTPOT :                       Init_TestProb_ELBDM_ExtPot();                      break;
 
