@@ -1,9 +1,21 @@
 # Mac
 .DS_Store
 
+# Linux
+*.swp
+
+# Object files
 *.o
 
+# Jetbrain
+*.cache
+*.idea
+*.fleet
+compile_commands.json
+
+Makefile
 bin/**
+src/generate_make.sh
 gamer
 GAMER_CompareData
 GAMER_ExtractUniform
