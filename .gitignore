@@ -20,3 +20,6 @@ gamer
 GAMER_CompareData
 GAMER_ExtractUniform
 GAMER_ExtractProfile
+.vscode
+*~
+src/Makefile
