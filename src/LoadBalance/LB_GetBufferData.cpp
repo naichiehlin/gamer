@@ -3,13 +3,13 @@
 #ifdef LOAD_BALANCE
 
 
-const real BufSizeFactor = 1.05;    // Send/RecvBufSize = int(NSend/NRecv*BufSizeFactor) --> must be >= 1.0
+const real BufSizeFactor = 1.05;    // Send/RecvBufSize = (long)(SendSize/RecvSize*BufSizeFactor) --> must be >= 1.0
 
 // MPI buffers are shared by some particle routines
-static real *MPI_SendBuf_Shared = NULL;
-static real *MPI_RecvBuf_Shared = NULL;
-static int   SendBufSize        = -1;
-static int   RecvBufSize        = -1;
+static void *MPI_SendBuf_Shared = NULL;
+static void *MPI_RecvBuf_Shared = NULL;
+static long  SendBufSize        = -1L;
+static long  RecvBufSize        = -1L;
 
 #ifdef TIMING
 extern Timer_t *Timer_MPI[3];
@@ -48,8 +48,9 @@ extern Timer_t *Timer_MPI[3];
 //                                 COARSE_FINE_ELECTRIC : electric field across the coarse-fine boundaries (MHD ONLY)
 //                TVarCC     : Target cell-centered variables to exchange
 //                             --> Supported variables in different models:
-//                                 HYDRO : _DENS, _MOMX, _MOMY, _MOMZ, _ENGY [, _POTE]
-//                                 ELBDM : _DENS, _REAL, _IMAG [, _POTE]
+//                                 HYDRO        : _DENS, _MOMX, _MOMY, _MOMZ, _ENGY [, _POTE]
+//                                 ELBDM_WAVE   : _DENS, _REAL, _IMAG [, _POTE]
+//                                 ELBDM_HYBRID : _DENS, _PHAS [, _POTE]
 //                             --> _FLUID, _PASSIVE, and _TOTAL apply to all models
 //                             --> In addition, the flux variables (e.g., _FLUX_DENS) are also supported
 //                             Restrictions :
@@ -584,8 +585,8 @@ void LB_GetBufferData( const int lv, const int FluSg, const int MagSg, const int
 
 
 // allocate send/recv buffers (only when the current buffer size is not large enough --> improve performance)
-   real *SendBuf = LB_GetBufferData_MemAllocate_Send( NSend_Total );
-   real *RecvBuf = LB_GetBufferData_MemAllocate_Recv( NRecv_Total );
+   real *SendBuf = (real *)LB_GetBufferData_MemAllocate_Send( NSend_Total*sizeof(real) );
+   real *RecvBuf = (real *)LB_GetBufferData_MemAllocate_Recv( NRecv_Total*sizeof(real) );
 
 
 
@@ -1638,8 +1639,8 @@ void LB_GetBufferData( const int lv, const int FluSg, const int MagSg, const int
 #  ifdef TIMING
    if ( OPT__TIMING_MPI )
    {
-      char FileName[100];
-      sprintf( FileName, "Record__TimingMPI_Rank%05d", MPI_Rank );
+      char FileName[2*MAX_STRING];
+      sprintf( FileName, "%s/Record__TimingMPI_Rank%05d", OUTPUT_DIR, MPI_Rank );
 
       char ModeName[100];
       switch ( GetBufMode )
@@ -1798,27 +1799,32 @@ void LB_GetBufferData( const int lv, const int FluSg, const int MagSg, const int
 //                2. This function is used by some particle routines as well
 //                3. We reallocate send/recv buffers only when the current buffer size is not large enough
 //                   --> It greatly improves MPI performance
+//                4. Use ::operator new/delete to allocate/deallocate MPI_SendBuf_Shared, because it is a void pointer,
+//                   and one cannot use "new void [N]" to allocate a void pointer with N elements, since void datatype does not have size
+//                   (see https://stackoverflow.com/questions/1666224/what-is-the-size-of-void); thus, we use
+//                   ::operator new/delete to allocate/deallocate raw memory in unit of bytes
+//                   (see https://stackoverflow.com/questions/14111900/using-new-on-void-pointer)
 //
-// Parameter   :  NSend : Number of elements (with the type "real") to be sent
+// Parameter   :  SendSize : Number of bytes to be sent
 //
 // Return      :  Pointer to the MPI send buffer
 //-------------------------------------------------------------------------------------------------------
-real *LB_GetBufferData_MemAllocate_Send( const int NSend )
+void *LB_GetBufferData_MemAllocate_Send( const long SendSize )
 {
 
-   if ( NSend > SendBufSize )
+   if ( SendSize > SendBufSize )
    {
-      if ( MPI_SendBuf_Shared != NULL )   delete [] MPI_SendBuf_Shared;
+      if ( MPI_SendBuf_Shared != NULL )   ::operator delete (MPI_SendBuf_Shared);
 
 //    allocate BufSizeFactor more memory to sustain longer
-      SendBufSize = int(NSend*BufSizeFactor);
+      SendBufSize = (long)(SendSize*BufSizeFactor);
 
 //    check integer overflow
       if ( SendBufSize < 0 )
-         Aux_Error( ERROR_INFO, "NSend %d, BufSizeFactor %13.7e, SendBufSize %d < 0 !!\n",
-                    NSend, BufSizeFactor, SendBufSize );
+         Aux_Error( ERROR_INFO, "SendSize %ld, BufSizeFactor %13.7e, SendBufSize %ld < 0 !!\n",
+                    SendSize, BufSizeFactor, SendBufSize );
 
-      MPI_SendBuf_Shared = new real [SendBufSize];
+      MPI_SendBuf_Shared = ::operator new (SendBufSize);
    }
 
    return MPI_SendBuf_Shared;
@@ -1835,27 +1841,32 @@ real *LB_GetBufferData_MemAllocate_Send( const int NSend )
 //                2. This function is used by some particle routines as well
 //                3. We reallocate send/recv buffers only when the current buffer size is not large enough
 //                   --> It greatly improves MPI performance
+//                4. Use ::operator new/delete to allocate/deallocate MPI_RecvBuf_Shared, because it is a void pointer,
+//                   and one cannot use "new void [N]" to allocate a void pointer with N elements, since void datatype does not have size
+//                   (see https://stackoverflow.com/questions/1666224/what-is-the-size-of-void); thus, we use
+//                   ::operator new/delete to allocate/deallocate raw memory in unit of bytes
+//                   (see https://stackoverflow.com/questions/14111900/using-new-on-void-pointer)
 //
-// Parameter   :  NRecv : Number of elements (with the type "real") to be sent
+// Parameter   :  RecvSize : Number of bytes to be received
 //
 // Return      :  Pointer to the MPI recv buffer
 //-------------------------------------------------------------------------------------------------------
-real *LB_GetBufferData_MemAllocate_Recv( const int NRecv )
+void *LB_GetBufferData_MemAllocate_Recv( const long RecvSize )
 {
 
-   if ( NRecv > RecvBufSize )
+   if ( RecvSize > RecvBufSize )
    {
-      if ( MPI_RecvBuf_Shared != NULL )   delete [] MPI_RecvBuf_Shared;
+      if ( MPI_RecvBuf_Shared != NULL )   ::operator delete (MPI_RecvBuf_Shared);
 
 //    allocate BufSizeFactor more memory to sustain longer
-      RecvBufSize = int(NRecv*BufSizeFactor);
+      RecvBufSize = (long)(RecvSize*BufSizeFactor);
 
 //    check integer overflow
       if ( RecvBufSize < 0 )
-         Aux_Error( ERROR_INFO, "NRecv %d, BufSizeFactor %13.7e, RecvBufSize %d < 0 !!\n",
-                    NRecv, BufSizeFactor, RecvBufSize );
+         Aux_Error( ERROR_INFO, "RecvSize %ld, BufSizeFactor %13.7e, RecvBufSize %ld < 0 !!\n",
+                    RecvSize, BufSizeFactor, RecvBufSize );
 
-      MPI_RecvBuf_Shared = new real [RecvBufSize];
+      MPI_RecvBuf_Shared = ::operator new (RecvBufSize);
    }
 
    return MPI_RecvBuf_Shared;
@@ -1868,7 +1879,9 @@ real *LB_GetBufferData_MemAllocate_Recv( const int NRecv )
 // Function    :  LB_GetBufferData_MemFree
 // Description :  Free the MPI send and recv buffers
 //
-// Note        :  This function is invoked by "End_MemFree"
+// Note        :  1. This function is invoked by "End_MemFree"
+//                2. Use ::operator delete to deallocate MPI_SendBuf_Shared/MPI_RecvBuf_Shared, because
+//                   they are void pointers allocated as raw memories.
 //
 // Parameter   :  None
 //-------------------------------------------------------------------------------------------------------
@@ -1877,13 +1890,13 @@ void LB_GetBufferData_MemFree()
 
    if ( MPI_SendBuf_Shared != NULL )
    {
-      delete [] MPI_SendBuf_Shared;
+      ::operator delete (MPI_SendBuf_Shared);
       MPI_SendBuf_Shared = NULL;
    }
 
    if ( MPI_RecvBuf_Shared != NULL )
    {
-      delete [] MPI_RecvBuf_Shared;
+      ::operator delete (MPI_RecvBuf_Shared);
       MPI_RecvBuf_Shared = NULL;
    }
 

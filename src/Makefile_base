@@ -7,7 +7,7 @@
 # To compile GAMER, please set the following configurations properly:
 #
 # (1) simulation options
-# (2) compiler and flags
+# (2) compilers and flags
 # (3) library paths
 # ===========================================================================
 
@@ -21,23 +21,24 @@ EXECUTABLE := gamer
 
 # output detailed compilation commands (0/1 = off/on)
 #######################################################################################################
-COMPILE_VERBOSE := 0
+COMPILE_VERBOSE := @@@COMPILE_VERBOSE@@@
 
 
 
 # simulation options
 #######################################################################################################
-SIMU_OPTION = @@@SIMU_OPTION@@@
+SIMU_OPTION  = @@@SIMU_OPTION@@@
+SIMU_OPTION += -DGPU_COMPUTE_CAPABILITY=@@@GPU_COMPUTE_CAPABILITY@@@
 
 
 
 # compilers and flags
 #######################################################################################################
-CXX         = @@@CXX@@@
-CXXFLAG     = @@@CXXFLAG@@@
-LIB         = @@@LIBFLAG@@@
-OPENMPFLAG  = @@@OPENMPFLAG@@@
-NVCC        = $(CUDA_PATH)/bin/nvcc @@@CUDAFLAG@@@
+CXX        = @@@CXX@@@
+CXXFLAG    = @@@CXXFLAG@@@
+LIB        = @@@LIBFLAG@@@
+OPENMPFLAG = @@@OPENMPFLAG@@@
+NVCC       = $(CUDA_PATH)/bin/nvcc
 
 
 
@@ -51,6 +52,7 @@ HDF5_PATH    := @@@HDF5_PATH@@@
 GRACKLE_PATH := @@@GRACKLE_PATH@@@
 GSL_PATH     := @@@GSL_PATH@@@
 LIBYT_PATH   := @@@LIBYT_PATH@@@
+CUFFTDX_PATH := @@@CUFFTDX_PATH@@@
 
 
 
@@ -75,8 +77,8 @@ CPU_FILE    += Aux_Check_Parameter.cpp  Aux_Check_Conservation.cpp  Aux_Check.cp
                Aux_Check_Refinement.cpp  Aux_Check_Restrict.cpp  Aux_Error.cpp  Aux_GetCPUInfo.cpp \
                Aux_GetMemInfo.cpp  Aux_Message.cpp  Aux_Record_PatchCount.cpp  Aux_TakeNote.cpp  Aux_Timing.cpp \
                Aux_Check_MemFree.cpp  Aux_Record_Performance.cpp  Aux_CheckFileExist.cpp  Aux_Array.cpp \
-               Aux_Record_User.cpp  Aux_Record_CorrUnphy.cpp  Aux_SwapPointer.cpp  Aux_Check_NormalizePassive.cpp \
-               Aux_LoadTable.cpp  Aux_IsFinite.cpp  Aux_ComputeProfile.cpp  Aux_FindExtrema.cpp  Aux_PauseManually.cpp
+               Aux_Record_User.cpp  Aux_Record_CorrUnphy.cpp  Aux_Record_Center.cpp  Aux_SwapPointer.cpp  Aux_Check_NormalizePassive.cpp \
+               Aux_LoadTable.cpp  Aux_IsFinite.cpp  Aux_ComputeProfile.cpp  Aux_FindExtrema.cpp  Aux_FindWeightedAverageCenter.cpp  Aux_PauseManually.cpp
 
 CPU_FILE    += CPU_FluidSolver.cpp  Flu_AdvanceDt.cpp  Flu_Prepare.cpp  Flu_Close.cpp  Flu_FixUp_Flux.cpp \
                Flu_FixUp_Restrict.cpp  Flu_AllocateFluxArray.cpp  Flu_BoundaryCondition_User.cpp  Flu_ResetByUser.cpp \
@@ -92,13 +94,14 @@ CPU_FILE    += End_GAMER.cpp  End_MemFree.cpp  End_MemFree_Fluid.cpp  End_StopMa
                Init_Unit.cpp  Init_UniformGrid.cpp  Init_Field.cpp  Init_User.cpp  Init_FFTW.cpp
 
 CPU_FILE    += Interpolate.cpp  Int_CQuadratic.cpp  Int_MinMod1D.cpp  Int_MinMod3D.cpp  Int_vanLeer.cpp \
-               Int_Quadratic.cpp  Int_Table.cpp  Int_CQuartic.cpp  Int_Quartic.cpp
+               Int_Quadratic.cpp  Int_Table.cpp  Int_CQuartic.cpp  Int_Quartic.cpp  Int_Spectral.cpp
 
 CPU_FILE    += Mis_CompareRealValue.cpp  Mis_GetTotalPatchNumber.cpp  Mis_GetTimeStep.cpp  Mis_Heapsort.cpp \
                Mis_BinarySearch.cpp  Mis_1D3DIdx.cpp  Mis_Matching.cpp  Mis_GetTimeStep_User.cpp \
                Mis_dTime2dt.cpp  Mis_CoordinateTransform.cpp  Mis_BinarySearch_Real.cpp  Mis_InterpolateFromTable.cpp \
                CPU_dtSolver.cpp  dt_Prepare_Flu.cpp  dt_Prepare_Pot.cpp  dt_Close.cpp  dt_InvokeSolver.cpp \
-               Mis_UserWorkBeforeNextLevel.cpp  Mis_UserWorkBeforeNextSubstep.cpp
+               Mis_UserWorkBeforeNextLevel.cpp  Mis_UserWorkBeforeNextSubstep.cpp \
+               Mis_SortByRows.cpp
 
 CPU_FILE    += Output_DumpData_Total.cpp  Output_DumpData.cpp  Output_DumpManually.cpp  Output_PatchMap.cpp \
                Output_DumpData_Part.cpp  Output_FlagMap.cpp  Output_Patch.cpp  Output_PreparedPatch_Fluid.cpp \
@@ -106,7 +109,8 @@ CPU_FILE    += Output_DumpData_Total.cpp  Output_DumpData.cpp  Output_DumpManual
                Output_DumpData_Total_HDF5.cpp  Output_L1Error.cpp  Output_UserWorkBeforeOutput.cpp
 
 CPU_FILE    += Flag_Real.cpp  Refine.cpp   SiblingSearch.cpp  SiblingSearch_Base.cpp  FindFather.cpp \
-               Flag_User.cpp  Flag_Check.cpp  Flag_Lohner.cpp  Flag_Region.cpp
+               Flag_User.cpp  Flag_Check.cpp  Flag_Lohner.cpp  Flag_Region.cpp  Sync_UseWaveFlag.cpp \
+	       Flag_UserWorkBeforeFlag.cpp
 
 CPU_FILE    += Table_01.cpp  Table_02.cpp  Table_03.cpp  Table_04.cpp  Table_05.cpp  Table_06.cpp \
                Table_07.cpp  Table_SiblingSharingSameEdge.cpp  Table_SiblingPatch.cpp
@@ -160,22 +164,25 @@ endif # LOAD_BALANCE
 endif # MHD
 
 
-# ELBDM source files (included only inf "MODEL=ELBDM")
+# ELBDM source files (included only if "MODEL=ELBDM")
 # -------------------------------------------------------------------------------
 else ifeq "$(filter -DMODEL=ELBDM, $(SIMU_OPTION))" "-DMODEL=ELBDM"
-GPU_FILE    += CUFLU_ELBDMSolver.cu
+GPU_FILE    += CUFLU_ELBDMSolver_FD.cu  CUFLU_ELBDMSolver_GramFE_FFT.cu  CUFLU_ELBDMSolver_GramFE_MATMUL.cu  CUFLU_ELBDMSolver_HJ.cu \
+               CUAPI_SendGramFEMatrix2GPU.cu
 
-CPU_FILE    += CPU_ELBDMSolver.cpp  ELBDM_Init_ByFunction_AssignData.cpp  ELBDM_Init_ByFile_AssignData.cpp \
-               ELBDM_GetTimeStep_Fluid.cpp  ELBDM_Flag_EngyDensity.cpp  ELBDM_UnwrapPhase.cpp \
-               ELBDM_GetTimeStep_Phase.cpp  ELBDM_SetTaylor3Coeff.cpp
+CPU_FILE    += CPU_ELBDMSolver_FD.cpp  CPU_ELBDMSolver_FFT.cpp  CPU_ELBDMSolver_GramFE_FFT.cpp  CPU_ELBDMSolver_GramFE_MATMUL.cpp \
+               CPU_ELBDMSolver_HJ.cpp  ELBDM_Init_ByFunction_AssignData.cpp  ELBDM_GetTimeStep_Fluid.cpp  ELBDM_GetTimeStep_Hybrid_CFL.cpp \
+               ELBDM_Flag_EngyDensity.cpp  ELBDM_Flag_Interference.cpp  ELBDM_Flag_Spectral.cpp  ELBDM_UnwrapPhase.cpp \
+               ELBDM_GetTimeStep_Phase.cpp  ELBDM_GetTimeStep_Hybrid_Velocity.cpp  ELBDM_HasWaveCounterpart.cpp  ELBDM_SetTaylor3Coeff.cpp \
+               ELBDM_GramFE_EvolutionMatrix.cpp  ELBDM_RemoveMotionCM.cpp  ELBDM_Aux_Record_Hybrid.cpp
 
 vpath %.cu     Model_ELBDM/GPU_ELBDM
 vpath %.cpp    Model_ELBDM/CPU_ELBDM  Model_ELBDM
 
 ifeq "$(filter -DGRAVITY, $(SIMU_OPTION))" "-DGRAVITY"
-GPU_FILE    += CUPOT_ELBDMGravitySolver.cu
+GPU_FILE    += CUPOT_ELBDMGravitySolver.cu  CUPOT_ELBDMGravitySolver_HJ.cu
 
-CPU_FILE    += CPU_ELBDMGravitySolver.cpp  ELBDM_GetTimeStep_Gravity.cpp
+CPU_FILE    += CPU_ELBDMGravitySolver.cpp  CPU_ELBDMGravitySolver_HJ.cpp  ELBDM_GetTimeStep_Gravity.cpp
 
 vpath %.cu     Model_ELBDM/GPU_ELBDMGravity
 vpath %.cpp    Model_ELBDM/CPU_ELBDMGravity
@@ -224,7 +231,8 @@ CPU_FILE    += Par_Init_ByFunction.cpp  Par_Output_TextFile.cpp  Par_Output_Bina
                Par_Aux_InitCheck.cpp  Par_Aux_Record_ParticleCount.cpp  Par_PassParticle2Son_MultiPatch.cpp \
                Par_Synchronize.cpp  Par_PredictPos.cpp  Par_Init_ByFile.cpp  Par_Init_Attribute.cpp \
                Par_AddParticleAfterInit.cpp  Par_PassParticle2Son_SinglePatch.cpp  Par_EquilibriumIC.cpp \
-               Par_ScatterParticleData.cpp  Par_UpdateTracerParticle.cpp  Par_MapMesh2Particles.cpp  Par_Sort.cpp
+               Par_ScatterParticleData.cpp  Par_UpdateTracerParticle.cpp  Par_MapMesh2Particles.cpp \
+               Par_Init_Attribute_Mesh.cpp  Par_Output_TracerParticle_Mesh.cpp
 
 vpath %.cu     Particle/GPU
 vpath %.cpp    Particle/CPU  Particle
@@ -399,7 +407,7 @@ endif
 # -------------------------------------------------------------------------------
 ifeq "$(filter -DGPU, $(SIMU_OPTION))" "-DGPU"
 LIB += -L$(CUDA_PATH)/lib64
-LIB += -Wl,-rpath=$(CUDA_PATH)/lib64
+LIB += -Wl,-rpath,$(CUDA_PATH)/lib64
 LIB += -lcudart
 endif
 
@@ -409,7 +417,7 @@ endif
 
 ifeq "$(filter -DSUPPORT_FFTW=FFTW3, $(SIMU_OPTION))" "-DSUPPORT_FFTW=FFTW3"
    LIB += -L$(FFTW3_PATH)/lib
-   LIB += -Wl,-rpath=$(FFTW3_PATH)/lib
+   LIB += -Wl,-rpath,$(FFTW3_PATH)/lib
    ifeq "$(filter -DSERIAL, $(SIMU_OPTION))" "-DSERIAL"
       LIB += -lfftw3 -lfftw3f -lm
    else
@@ -423,7 +431,7 @@ endif
 
 ifeq "$(filter -DSUPPORT_FFTW=FFTW2, $(SIMU_OPTION))" "-DSUPPORT_FFTW=FFTW2"
    LIB += -L$(FFTW2_PATH)/lib
-   LIB += -Wl,-rpath=$(FFTW2_PATH)/lib
+   LIB += -Wl,-rpath,$(FFTW2_PATH)/lib
    ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
       ifeq "$(filter -DSERIAL, $(SIMU_OPTION))" "-DSERIAL"
          LIB += -ldrfftw -ldfftw
@@ -441,22 +449,22 @@ endif
 
 ifeq "$(filter -DSUPPORT_GRACKLE, $(SIMU_OPTION))" "-DSUPPORT_GRACKLE"
 LIB += -L$(GRACKLE_PATH)/lib -lgrackle
-LIB += -Wl,-rpath=$(GRACKLE_PATH)/lib
+LIB += -Wl,-rpath,$(GRACKLE_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_HDF5, $(SIMU_OPTION))" "-DSUPPORT_HDF5"
 LIB += -L$(HDF5_PATH)/lib -lhdf5
-LIB += -Wl,-rpath=$(HDF5_PATH)/lib
+LIB += -Wl,-rpath,$(HDF5_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_GSL, $(SIMU_OPTION))" "-DSUPPORT_GSL"
 LIB += -L$(GSL_PATH)/lib -lgsl -lgslcblas
-LIB += -Wl,-rpath=$(GSL_PATH)/lib
+LIB += -Wl,-rpath,$(GSL_PATH)/lib
 endif
 
 ifeq "$(filter -DSUPPORT_LIBYT, $(SIMU_OPTION))" "-DSUPPORT_LIBYT"
 LIB += -L$(LIBYT_PATH)/lib -lyt
-LIB += -Wl,-rpath=$(LIBYT_PATH)/lib
+LIB += -Wl,-rpath,$(LIBYT_PATH)/lib
 endif
 
 
@@ -496,6 +504,13 @@ ifeq "$(filter -DSUPPORT_LIBYT, $(SIMU_OPTION))" "-DSUPPORT_LIBYT"
 INCLUDE += -I$(LIBYT_PATH)/include
 endif
 
+ifeq "$(filter -DGPU, $(SIMU_OPTION))" "-DGPU"
+   ifeq "$(filter -DWAVE_SCHEME=WAVE_GRAMFE, $(SIMU_OPTION))" "-DWAVE_SCHEME=WAVE_GRAMFE"
+      ifeq "$(filter -DGRAMFE_SCHEME=GRAMFE_FFT, $(SIMU_OPTION))" "-DGRAMFE_SCHEME=GRAMFE_FFT"
+         INCLUDE += -I$(CUFFTDX_PATH)/include
+      endif
+   endif
+endif
 
 # CXX flags
 # -------------------------------------------------------------------------------
@@ -526,89 +541,18 @@ endif
 # NVCC flags
 # -------------------------------------------------------------------------------
 # common flags
-NVCCFLAG_COM := $(COMMONFLAG) -O3 # -Xcompiler #-Xopencc -OPT:Olimit=0
+NVCCFLAG_COM := $(COMMONFLAG) @@@NVCCFLAG_COM@@@
 
-ifeq      "$(filter -DGPU_ARCH=FERMI,   $(SIMU_OPTION))" "-DGPU_ARCH=FERMI"
-   NVCCFLAG_ARCH += -gencode arch=compute_20,code=\"compute_20,sm_20\"
-#  NVCCFLAG_ARCH += -gencode arch=compute_20,code=\"compute_20,sm_21\"
-else ifeq "$(filter -DGPU_ARCH=KEPLER,  $(SIMU_OPTION))" "-DGPU_ARCH=KEPLER"
-   NVCCFLAG_ARCH += -gencode arch=compute_30,code=\"compute_30,sm_30\"
-   NVCCFLAG_ARCH += -gencode arch=compute_35,code=\"compute_35,sm_35\"
-   NVCCFLAG_ARCH += -gencode arch=compute_37,code=\"compute_37,sm_37\"
-else ifeq "$(filter -DGPU_ARCH=MAXWELL, $(SIMU_OPTION))" "-DGPU_ARCH=MAXWELL"
-   NVCCFLAG_ARCH += -gencode arch=compute_50,code=\"compute_50,sm_50\"
-   NVCCFLAG_ARCH += -gencode arch=compute_52,code=\"compute_52,sm_52\"
-else ifeq "$(filter -DGPU_ARCH=PASCAL,  $(SIMU_OPTION))" "-DGPU_ARCH=PASCAL"
-   NVCCFLAG_ARCH += -gencode arch=compute_60,code=\"compute_60,sm_60\"
-   NVCCFLAG_ARCH += -gencode arch=compute_61,code=\"compute_61,sm_61\"
-else ifeq "$(filter -DGPU_ARCH=VOLTA,  $(SIMU_OPTION))" "-DGPU_ARCH=VOLTA"
-   NVCCFLAG_ARCH += -gencode arch=compute_70,code=\"compute_70,sm_70\"
-else ifeq "$(filter -DGPU_ARCH=TURING,  $(SIMU_OPTION))" "-DGPU_ARCH=TURING"
-   NVCCFLAG_ARCH += -gencode arch=compute_75,code=\"compute_75,sm_75\"
-else ifeq "$(filter -DGPU_ARCH=AMPERE,  $(SIMU_OPTION))" "-DGPU_ARCH=AMPERE"
-   NVCCFLAG_ARCH += -gencode arch=compute_80,code=\"compute_80,sm_80\"
-   NVCCFLAG_ARCH += -gencode arch=compute_86,code=\"compute_86,sm_86\"
-else ifeq "$(filter -DGPU, $(SIMU_OPTION))" "-DGPU"
-   $(error unknown GPU_ARCH (please set it in the Makefile))
-endif
+NVCCFLAG_ARCH += @@@NVCCFLAG_ARCH@@@
 
 NVCCFLAG_COM += $(NVCCFLAG_ARCH)
 
-ifeq "$(filter -DGAMER_DEBUG, $(SIMU_OPTION))" "-DGAMER_DEBUG"
-   NVCCFLAG_COM += -g -Xptxas -v   # "-G" may cause the GPU Poisson solver to fail
-endif
-
-#NVCCFLAG_COM += -use_fast_math
-
 # fluid solver flags
-NVCCFLAG_FLU += -Xptxas -dlcm=ca -prec-div=false -ftz=true
+NVCCFLAG_FLU += @@@NVCCFLAG_FLU@@@ @@@MAXRREGCOUNT_FLU@@@
 
-ifeq      "$(filter -DGPU_ARCH=FERMI, $(SIMU_OPTION))" "-DGPU_ARCH=FERMI"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-#    NVCCFLAG_FLU += --maxrregcount=XX
-   else
-#    NVCCFLAG_FLU += --maxrregcount=XX
-   endif
-else ifeq "$(filter -DGPU_ARCH=KEPLER, $(SIMU_OPTION))" "-DGPU_ARCH=KEPLER"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=128
-   else
-     NVCCFLAG_FLU += --maxrregcount=70
-   endif
-else ifeq "$(filter -DGPU_ARCH=MAXWELL, $(SIMU_OPTION))" "-DGPU_ARCH=MAXWELL"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=192
-   else
-     NVCCFLAG_FLU += --maxrregcount=128
-   endif
-else ifeq "$(filter -DGPU_ARCH=PASCAL, $(SIMU_OPTION))" "-DGPU_ARCH=PASCAL"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=192
-   else
-     NVCCFLAG_FLU += --maxrregcount=128
-   endif
-else ifeq "$(filter -DGPU_ARCH=VOLTA, $(SIMU_OPTION))" "-DGPU_ARCH=VOLTA"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=192
-   else
-     NVCCFLAG_FLU += --maxrregcount=128
-   endif
-else ifeq "$(filter -DGPU_ARCH=TURING, $(SIMU_OPTION))" "-DGPU_ARCH=TURING"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=192
-   else
-     NVCCFLAG_FLU += --maxrregcount=128
-   endif
-else ifeq "$(filter -DGPU_ARCH=AMPERE, $(SIMU_OPTION))" "-DGPU_ARCH=AMPERE"
-   ifeq "$(filter -DFLOAT8, $(SIMU_OPTION))" "-DFLOAT8"
-     NVCCFLAG_FLU += --maxrregcount=192
-   else
-     NVCCFLAG_FLU += --maxrregcount=128
-   endif
-endif
 
 # Poisson/gravity solvers flags
-NVCCFLAG_POT += -Xptxas -dlcm=ca
+NVCCFLAG_POT += @@@NVCCFLAG_POT@@@
 
 
 # remove extra whitespaces
@@ -630,6 +574,7 @@ HDF5_PATH    := $(strip $(HDF5_PATH))
 GRACKLE_PATH := $(strip $(GRACKLE_PATH))
 GSL_PATH     := $(strip $(GSL_PATH))
 LIBYT_PATH   := $(strip $(LIBYT_PATH))
+CUFFTDX_PATH := $(strip $(CUFFTDX_PATH))
 
 
 # implicit rules (do NOT modify the order of the following rules)

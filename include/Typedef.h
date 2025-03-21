@@ -22,6 +22,43 @@ typedef double real;
 typedef float  real;
 #endif
 
+#ifdef FLOAT8_PAR
+typedef double real_par;
+#else
+typedef float  real_par;
+#endif
+
+#ifdef INT8_PAR
+typedef long long_par;
+#else
+typedef int  long_par;
+#endif
+
+#ifdef SUPPORT_GRACKLE
+#include <grackle_float.h>
+#if   defined GRACKLE_FLOAT_8
+typedef double real_che;
+#elif defined GRACKLE_FLOAT_4
+typedef float  real_che;
+#else
+#error : ERROR : GRACKLE_FLOAT_8 and GRACKLE_FLOAT_4 are not defined in Grackle library !!
+#endif
+#endif // #ifdef SUPPORT_GRACKLE
+
+#if ( GRAMFE_SCHEME == GRAMFE_FFT )
+#ifdef GRAMFE_FFT_FLOAT8
+typedef double gramfe_fft_float;
+#else
+typedef float  gramfe_fft_float;
+#endif
+#endif // #if ( GRAMFE_SCHEME == GRAMFE_FFT )
+
+#ifdef GRAMFE_MATMUL_FLOAT8
+typedef double gramfe_matmul_float;
+#else
+typedef float  gramfe_matmul_float;
+#endif
+
 
 // short names for unsigned type
 typedef unsigned short     ushort;
@@ -60,8 +97,20 @@ const TestProbID_t
    TESTPROB_HYDRO_JET_ICM_WALL                 =   52,
    TESTPROB_HYDRO_CDM_LSS                      =  100,
    TESTPROB_HYDRO_ZELDOVICH                    =  101,
-   TESTPROB_ELBDM_EXTPOT                       = 1000;
-
+   TESTPROB_ELBDM_EXTPOT                       = 1000,
+   TESTPROB_ELBDM_JEANS_INSTABILITY_COMOVING   = 1001,
+   TESTPROB_ELBDM_JEANS_INSTABILITY_PHYSICAL   = 1002,
+   TESTPROB_ELBDM_SOLITON                      = 1003,
+   TESTPROB_ELBDM_SELF_SIMILAR_HALO            = 1004,
+   TESTPROB_ELBDM_VORTEX_PAIR_ROTATING         = 1005,
+   TESTPROB_ELBDM_VORTEX_PAIR_LINEAR           = 1006,
+   TESTPROB_ELBDM_ISOLATED_HALO                = 1007,
+   TESTPROB_ELBDM_GAUSSIAN_WAVE_PACKET         = 1008,
+   TESTPROB_ELBDM_LSS                          = 1009,
+   TESTPROB_ELBDM_PLANE_WAVE                   = 1010,
+   TESTPROB_ELBDM_PERTURBATION                 = 1011,
+   TESTPROB_ELBDM_HALO_MERGER                  = 1012,
+   TESTPROB_ELBDM_DISK_HEATING                 = 1013;
 
 // program initialization options
 typedef int OptInit_t;
@@ -122,7 +171,8 @@ const IntScheme_t
    INT_CQUAD    = 4,
    INT_QUAD     = 5,
    INT_CQUAR    = 6,
-   INT_QUAR     = 7;
+   INT_QUAR     = 7,
+   INT_SPECTRAL = 8;
 
 
 // data reconstruction TVD limiters
@@ -165,7 +215,8 @@ const OptOutputPart_t
    OUTPUT_X         = 4,
    OUTPUT_Y         = 5,
    OUTPUT_Z         = 6,
-   OUTPUT_DIAG      = 7;
+   OUTPUT_DIAG      = 7,
+   OUTPUT_BOX       = 8;
 
 
 // OPT_OUTPUT_PAR_MODE options
@@ -176,7 +227,7 @@ const OptOutputParMode_t
    OUTPUT_PAR_CBIN = 2;
 
 
-// options in "Prepare_PatchData"
+// options in Prepare_PatchData()
 typedef int PrepUnit_t;
 const PrepUnit_t
    UNIT_PATCH      = 1,
@@ -203,18 +254,17 @@ const Check_t
    CHECK_ON  = 1;
 
 
-// check unphysical quantities
-typedef int CheckUnphysical_t;
-const CheckUnphysical_t
-   UNPHY_MODE_SING         = 0,  // check single field
-   UNPHY_MODE_CONS         = 1,  // check conserved variables, including passive scalars
-   UNPHY_MODE_PRIM         = 2,  // check primitive variables, including passive scalars
-   UNPHY_MODE_PASSIVE_ONLY = 3;  // only check passive scalars
+// modes of Hydro_IsUnphysical()
+typedef int IsUnphyMode_t;
+const IsUnphyMode_t
+   UNPHY_MODE_CONS         = 0,  // check conserved variables, including passive scalars
+   UNPHY_MODE_PRIM         = 1,  // check primitive variables, including passive scalars
+   UNPHY_MODE_PASSIVE_ONLY = 2;  // only check passive scalars
 
 
-// verbosity levels of Hydro_CheckUnphysical()
-typedef int VerbosityLevelUnphy_t;
-const VerbosityLevelUnphy_t
+// verbosity levels of Hydro_IsUnphysical()
+typedef int IsUnphVerb_t;
+const IsUnphVerb_t
    UNPHY_SILENCE = 0,   // print nothing
    UNPHY_VERBOSE = 1;   // print out unphysical values
 
@@ -293,7 +343,7 @@ const OptFluBC_t
    BC_FLU_DIODE      = 5;
 
 
-// the gravity boundary conditions
+// gravity boundary conditions
 typedef int OptPotBC_t;
 const OptPotBC_t
 #ifdef GRAVITY
@@ -478,6 +528,16 @@ const SF_CreateStarScheme_t
 #endif
 
 
+// ELBDM_REMOVE_MOTION_CM options
+#if ( MODEL == ELBDM )
+typedef int ELBDMRemoveMotionCM_t;
+const ELBDMRemoveMotionCM_t
+   ELBDM_REMOVE_MOTION_CM_NONE       = 0,
+   ELBDM_REMOVE_MOTION_CM_INIT       = 1,
+   ELBDM_REMOVE_MOTION_CM_EVERY_STEP = 2;
+#endif
+
+
 // options in Aux_ComputeProfile() and Aux_FindExtrema()
 typedef int PatchType_t;
 const PatchType_t
@@ -492,6 +552,13 @@ typedef int ExtremaMode_t;
 const ExtremaMode_t
    EXTREMA_MIN = 1,
    EXTREMA_MAX = 2;
+
+
+// options in LoadInputTestProb()
+typedef int LoadParaMode_t;
+const LoadParaMode_t
+   LOAD_READPARA    = 1,
+   LOAD_HDF5_OUTPUT = 2;
 
 
 // function pointers

@@ -1,4 +1,5 @@
 #include "GAMER.h"
+#include <string.h>
 
 
 
@@ -80,6 +81,7 @@ void Init_ResetParameter()
    if ( DT__FLUID < 0.0 )
    {
 #     if   ( MODEL == HYDRO )
+
 #     if   ( FLU_SCHEME == RTVD )
       DT__FLUID = 0.50;
 #     elif ( FLU_SCHEME == MHM )
@@ -94,15 +96,28 @@ void Init_ResetParameter()
 #     endif
 
 #     elif  ( MODEL == ELBDM )
+
+#     if   ( WAVE_SCHEME == WAVE_FD )
 #     ifdef GRAVITY
       DT__FLUID = 0.20;                   // 1D k-max mode rotates 0.20*2*PI
-#     else
+#     else // # ifdef GRAVITY
 #     ifdef LAPLACIAN_4TH
       DT__FLUID = SQRT(27.0)*M_PI/32.0;   // stability limit (~0.51)
-#     else
+#     else // # ifdef LAPLACIAN_4TH
       DT__FLUID = SQRT(3.0)*M_PI/8.0;     // stability limit (~0.68)
-#     endif
-#     endif // #ifdef GRAVITY ... else ...
+#     endif // # ifdef LAPLACIAN_4TH ... else ...
+#     endif // # ifdef GRAVITY ... else ...
+
+#     elif ( WAVE_SCHEME == WAVE_GRAMFE )
+#     ifdef GRAVITY
+      DT__FLUID = 0.20;                   // 1D k-max mode rotates 0.20*2*PI
+#     else // # ifdef GRAVITY
+      DT__FLUID = 0.20;                   // stability limit depends on ghost boundary and extension order
+#     endif // # ifdef GRAVITY ... else ...
+
+#     else // WAVE_SCHEME
+#        error : ERROR : unsupported WAVE_SCHEME !!
+#     endif // WAVE_SCHEME
 
 #     else
 #     error : ERROR : unsupported MODEL !!
@@ -117,6 +132,46 @@ void Init_ResetParameter()
 
       PRINT_RESET_PARA( DT__FLUID_INIT, FORMAT_REAL, "" );
    }
+
+
+// hybrid dt (empirically determined CFL condition)
+#  if ( ELBDM_SCHEME == ELBDM_HYBRID )
+   if ( DT__HYBRID_CFL < 0.0 )
+   {
+#     ifdef GRAVITY
+      DT__HYBRID_CFL = 0.20;
+#     else
+      DT__HYBRID_CFL = 0.40;
+#     endif
+
+      PRINT_RESET_PARA( DT__HYBRID_CFL, FORMAT_REAL, "" );
+   }
+
+   if ( DT__HYBRID_CFL_INIT < 0.0 )
+   {
+      DT__HYBRID_CFL_INIT = DT__HYBRID_CFL;
+
+      PRINT_RESET_PARA( DT__HYBRID_CFL_INIT, FORMAT_REAL, "" );
+   }
+#  endif
+
+
+// hybrid velocity dt (empirically determined CFL condition)
+#  if ( ELBDM_SCHEME == ELBDM_HYBRID )
+   if ( DT__HYBRID_VELOCITY < 0.0 )
+   {
+      DT__HYBRID_VELOCITY = 1.00;
+
+      PRINT_RESET_PARA( DT__HYBRID_VELOCITY, FORMAT_REAL, "" );
+   }
+
+   if ( DT__HYBRID_VELOCITY_INIT < 0.0 )
+   {
+      DT__HYBRID_VELOCITY_INIT = DT__HYBRID_VELOCITY;
+
+      PRINT_RESET_PARA( DT__HYBRID_VELOCITY_INIT, FORMAT_REAL, "" );
+   }
+#  endif
 
 
 // gravity dt
@@ -274,6 +329,10 @@ void Init_ResetParameter()
 //     For example, the format %20.16e will give a length of 20. However, if only checking the string after %,
 //     the format %+-20.16e (align to the left and also add a + sign for a positive value) will give a zero string length
 //     since +- is not an integer. This is why checking OPT__OUTPUT_DATA_FORMAT+2 is necessary.
+   if ( strlen(OPT__OUTPUT_TEXT_FORMAT_FLT) > MAX_STRING-1 )
+      Aux_Error( ERROR_INFO, "Length of OPT__OUTPUT_TEXT_FORMAT_FLT (%d) should be smaller than MAX_STRING-1 (%d) !!\n",
+                 strlen(OPT__OUTPUT_TEXT_FORMAT_FLT), MAX_STRING-1 );
+
    StrLen_Flt = MAX( abs(atoi(OPT__OUTPUT_TEXT_FORMAT_FLT+1)), abs(atoi(OPT__OUTPUT_TEXT_FORMAT_FLT+2)) );
    sprintf( BlankPlusFormat_Flt, " %s", OPT__OUTPUT_TEXT_FORMAT_FLT );
 
@@ -298,6 +357,14 @@ void Init_ResetParameter()
       ELBDM_TAYLOR3_COEFF = NULL_REAL;
 
       PRINT_RESET_PARA( ELBDM_TAYLOR3_COEFF, FORMAT_REAL, "since ELBDM_TAYLOR3_AUTO is enabled" );
+   }
+
+// must disable ELBDM_TAYLOR3_AUTO for OPT__FREEZE_FLUID since ELBDM_SetTaylor3Coeff() doesn't support dt=0.0
+   if ( OPT__FREEZE_FLUID  &&  ELBDM_TAYLOR3_AUTO )
+   {
+      ELBDM_TAYLOR3_AUTO = false;
+
+      PRINT_RESET_PARA( ELBDM_TAYLOR3_AUTO, FORMAT_INT, "since OPT__FREEZE_FLUID is enabled" );
    }
 #  endif // #if ( MODEL == ELBDM )
 
@@ -418,6 +485,15 @@ void Init_ResetParameter()
 
       PRINT_RESET_PARA( amr->Par->GhostSizeTracer, FORMAT_INT, "for the adopted PAR_TR_INTERP scheme" );
    }
+
+#  ifndef TRACER
+   if ( OPT__OUTPUT_PAR_MESH )
+   {
+      OPT__OUTPUT_PAR_MESH = false;
+
+      PRINT_RESET_PARA( OPT__OUTPUT_PAR_MESH, FORMAT_INT, "since TRACER is disabled" );
+   }
+#  endif
 
 #  endif // #ifdef PARTICLE
 
@@ -646,6 +722,58 @@ void Init_ResetParameter()
 #  endif
 
 
+// angular resolution center
+   if ( OPT__FLAG_ANGULAR )
+   {
+      if ( FLAG_ANGULAR_CEN_X < 0.0 )
+      {
+         FLAG_ANGULAR_CEN_X = amr->BoxCenter[0];
+
+         PRINT_RESET_PARA( FLAG_ANGULAR_CEN_X, FORMAT_REAL, "" );
+      }
+
+      if ( FLAG_ANGULAR_CEN_Y < 0.0 )
+      {
+         FLAG_ANGULAR_CEN_Y = amr->BoxCenter[1];
+
+         PRINT_RESET_PARA( FLAG_ANGULAR_CEN_Y, FORMAT_REAL, "" );
+      }
+
+      if ( FLAG_ANGULAR_CEN_Z < 0.0 )
+      {
+         FLAG_ANGULAR_CEN_Z = amr->BoxCenter[2];
+
+         PRINT_RESET_PARA( FLAG_ANGULAR_CEN_Z, FORMAT_REAL, "" );
+      }
+   }
+
+
+// radial resolution center
+   if ( OPT__FLAG_RADIAL )
+   {
+      if ( FLAG_RADIAL_CEN_X < 0.0 )
+      {
+         FLAG_RADIAL_CEN_X = amr->BoxCenter[0];
+
+         PRINT_RESET_PARA( FLAG_RADIAL_CEN_X, FORMAT_REAL, "" );
+      }
+
+      if ( FLAG_RADIAL_CEN_Y < 0.0 )
+      {
+         FLAG_RADIAL_CEN_Y = amr->BoxCenter[1];
+
+         PRINT_RESET_PARA( FLAG_RADIAL_CEN_Y, FORMAT_REAL, "" );
+      }
+
+      if ( FLAG_RADIAL_CEN_Z < 0.0 )
+      {
+         FLAG_RADIAL_CEN_Z = amr->BoxCenter[2];
+
+         PRINT_RESET_PARA( FLAG_RADIAL_CEN_Z, FORMAT_REAL, "" );
+      }
+   }
+
+
 // turn off refinement criteria and checks related to density if "DENS" is not defined
 #  ifndef DENS
    if ( OPT__FLAG_RHO )
@@ -680,6 +808,58 @@ void Init_ResetParameter()
       PRINT_RESET_PARA( OPT__CK_CONSERVATION, FORMAT_INT, "since it's only supported in HYDRO/ELBDM" );
    }
 #  endif
+
+
+// set default value for the origin of angular momentum
+   if ( ANGMOM_ORIGIN_X < 0.0 )
+   {
+      ANGMOM_ORIGIN_X = amr->BoxCenter[0];
+
+      PRINT_RESET_PARA( ANGMOM_ORIGIN_X, FORMAT_REAL, "" );
+   }
+
+   if ( ANGMOM_ORIGIN_Y < 0.0 )
+   {
+      ANGMOM_ORIGIN_Y = amr->BoxCenter[1];
+
+      PRINT_RESET_PARA( ANGMOM_ORIGIN_Y, FORMAT_REAL, "" );
+   }
+
+   if ( ANGMOM_ORIGIN_Z < 0.0 )
+   {
+      ANGMOM_ORIGIN_Z = amr->BoxCenter[2];
+
+      PRINT_RESET_PARA( ANGMOM_ORIGIN_Z, FORMAT_REAL, "" );
+   }
+
+// set default value for OPT__RECORD_CENTER
+   if ( OPT__RECORD_CENTER )
+   {
+      if ( COM_CEN_X < 0.0  ||  COM_CEN_Y < 0.0  ||  COM_CEN_Z < 0.0 )
+      {
+         COM_CEN_X = -1.0;
+         COM_CEN_Y = -1.0;
+         COM_CEN_Z = -1.0;
+
+         PRINT_RESET_PARA( COM_CEN_X, FORMAT_REAL, "and it will be reset to the coordinate of the peak total density" );
+         PRINT_RESET_PARA( COM_CEN_Y, FORMAT_REAL, "and it will be reset to the coordinate of the peak total density" );
+         PRINT_RESET_PARA( COM_CEN_Z, FORMAT_REAL, "and it will be reset to the coordinate of the peak total density" );
+      }
+
+      if ( COM_MAX_R < 0.0 )
+      {
+         COM_MAX_R = __FLT_MAX__;
+
+         PRINT_RESET_PARA( COM_MAX_R, FORMAT_REAL, "" );
+      }
+
+      if ( COM_TOLERR_R < 0.0 )
+      {
+         COM_TOLERR_R = amr->dh[MAX_LEVEL];
+
+         PRINT_RESET_PARA( COM_TOLERR_R, FORMAT_REAL, "" );
+      }
+   }
 
 
 // OPT__LR_LIMITER
@@ -838,6 +1018,20 @@ void Init_ResetParameter()
    }
 
 
+// OPT__UM_IC_FLOAT8
+   if ( OPT__INIT == INIT_BY_FILE  &&  OPT__UM_IC_FLOAT8 < 0 )
+   {
+//    set OPT__UM_IC_FLOAT8 = FLOAT8 by default
+#     ifdef FLOAT8
+      OPT__UM_IC_FLOAT8 = 1;
+#     else
+      OPT__UM_IC_FLOAT8 = 0;
+#     endif
+
+      PRINT_RESET_PARA( OPT__UM_IC_FLOAT8, FORMAT_INT, "to be consistent with FLOAT8" );
+   }
+
+
 // always turn on "OPT__CK_PARTICLE" when debugging particles
 #  ifdef DEBUG_PARTICLE
    if ( !OPT__CK_PARTICLE )
@@ -859,6 +1053,34 @@ void Init_ResetParameter()
       PRINT_RESET_PARA( PAR_INIT, FORMAT_INT, "for restart" );
    }
 #  endif
+
+
+// PAR_IC_FLOAT/INT8
+#  ifdef PARTICLE
+   if ( amr->Par->Init == PAR_INIT_BY_FILE  &&  PAR_IC_FLOAT8 < 0 )
+   {
+//    set PAR_IC_FLOAT8 = FLOAT8_PAR by default
+#     ifdef FLOAT8_PAR
+      PAR_IC_FLOAT8 = 1;
+#     else
+      PAR_IC_FLOAT8 = 0;
+#     endif
+
+      PRINT_RESET_PARA( PAR_IC_FLOAT8, FORMAT_INT, "to be consistent with FLOAT8_PAR" );
+   }
+
+   if ( amr->Par->Init == PAR_INIT_BY_FILE  &&  PAR_IC_INT8 < 0 )
+   {
+//    set PAR_IC_INT8 = INT8_PAR by default
+#     ifdef INT8_PAR
+      PAR_IC_INT8 = 1;
+#     else
+      PAR_IC_INT8 = 0;
+#     endif
+
+      PRINT_RESET_PARA( PAR_IC_INT8, FORMAT_INT, "to be consistent with INT8_PAR" );
+   }
+#endif
 
 
 // JEANS_MIN_PRES must work with GRAVITY
